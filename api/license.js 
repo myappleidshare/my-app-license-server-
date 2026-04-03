@@ -1,18 +1,20 @@
-import { Redis } from '@upstash/redis';
+const { Redis } = require('@upstash/redis');
 
 const redis = new Redis({
   url: process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-export default async function handler(req, res) {
-  const { action, licenseKey } = req.method === 'POST'
-    ? await req.json ? req.json() : new Promise(r => {
-        let body = '';
-        req.on('data', c => body += c);
-        req.on('end', () => r(JSON.parse(body)));
-      })
-    : req.query;
+module.exports = async function handler(req, res) {
+  let action, licenseKey;
+
+  if (req.method === 'POST') {
+    action = req.body?.action;
+    licenseKey = req.body?.licenseKey;
+  } else {
+    action = req.query?.action;
+    licenseKey = req.query?.licenseKey;
+  }
 
   if (action === 'create') {
     await redis.set(`license:${licenseKey}`, 'unused');
@@ -27,5 +29,5 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
-  res.status(200).json({ success: false, reason: '未知操作' });
-}
+  return res.status(200).json({ success: false, reason: '未知操作' });
+};
