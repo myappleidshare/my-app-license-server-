@@ -1,10 +1,10 @@
-
+const crypto = require('crypto');
 const { randomUUID } = require('crypto');
 
 const licenses = new Map();
-const SECRET_KEY = Buffer.from('换成你自己的32位以上的密钥'.repeat(2).slice(0, 32));
+const SECRET_KEY = '换成你自己的32位以上的密钥';
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const { action, machineCode, licenseKey } = req.body;
 
   if (action === 'generate') {
