@@ -1,38 +1,43 @@
-const crypto = require('crypto');
-
-// 模拟数据库（⚠️ 重要：Vercel Serverless 重启会丢失数据，下面会说怎么解决）
-const licenses = new Map();
-
 module.exports = async function handler(req, res) {
   const { action, machineCode, licenseKey } = req.body;
 
-  // 你在本地生成激活码后，调用此接口存入云端
+  const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
+  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  async function redisGet(key) {
+    const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, {
+      headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+    });
+    const data = await r.json();
+    return data.result ? JSON.parse(data.result) : null;
+  }
+
+  async function redisSet(key, value) {
+    await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(value))}`, {
+      headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
+    });
+  }
+
+  // 你生成激活码后调用，存入云端
   if (action === 'create') {
-    if (licenses.has(licenseKey)) {
-      return res.json({ success: false, reason: '激活码已存在' });
-    }
-    licenses.set(licenseKey, { used: false, machine: null });
+    const existing = await redisGet(`license:${licenseKey}`);
+    if (existing) return res.json({ success: false, reason: '激活码已存在' });
+    await redisSet(`license:${licenseKey}`, { used: false, machine: null });
     return res.json({ success: true });
   }
 
-  // 用户激活时调用此接口
+  // 用户激活时调用
   if (action === 'verify') {
-    const data = licenses.get(licenseKey);
-
-    // 激活码不存在
+    const data = await redisGet(`license:${licenseKey}`);
     if (!data) return res.json({ valid: false, reason: '激活码无效' });
-
-    // 已绑定其他机器
     if (data.used && data.machine !== machineCode) {
       return res.json({ valid: false, reason: '激活码已被其他设备使用' });
     }
-
-    // 第一次使用：绑定机器码
     if (!data.used) {
-      data.used = true;
-      data.machine = machineCode;
+      await redisSet(`license:${licenseKey}`, { used: true, machine: machineCode });
     }
-
     return res.json({ valid: true });
   }
+
+  return res.json({ error: '未知操作' });
 };
