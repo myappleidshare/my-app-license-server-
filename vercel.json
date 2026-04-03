@@ -1,14 +1,3 @@
 {
-  "version": 2,
-  "functions": {
-    "api/license.js": {
-      "runtime": "nodejs20.x"
-    }
-  },
-  "routes": [
-    {
-      "src": "/api/license",
-      "dest": "/api/license.js"
-    }
-  ]
+  "version": 2
 }
