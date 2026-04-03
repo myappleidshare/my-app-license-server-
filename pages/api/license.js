@@ -1,47 +1,38 @@
 const crypto = require('crypto');
-const { randomUUID } = require('crypto');
 
+// 模拟数据库（⚠️ 重要：Vercel Serverless 重启会丢失数据，下面会说怎么解决）
 const licenses = new Map();
-const SECRET_KEY = '换成你自己的32位以上的密钥';
 
 module.exports = async function handler(req, res) {
   const { action, machineCode, licenseKey } = req.body;
 
-  if (action === 'generate') {
-    const productId = 'MYAPP_V1';
-    const expireDate = '2027-12-31';
-
-    const keyBody = randomUUID().replace(/-/g, '').toUpperCase().slice(0, 24);
-    const payload = `${machineCode}|${productId}|${expireDate}`;
-
-    const hmac = crypto.createHmac('sha256', SECRET_KEY);
-    hmac.update(payload);
-    const signature = hmac.digest('hex').toUpperCase().substring(0, 16);
-
-    const meta = Buffer.from(payload).toString('base64');
-    const key = `${keyBody}-${signature}|${meta}`;
-
-    licenses.set(key, { used: false, machine: machineCode });
-    res.json({ licenseKey: key });
+  // 你在本地生成激活码后，调用此接口存入云端
+  if (action === 'create') {
+    if (licenses.has(licenseKey)) {
+      return res.json({ success: false, reason: '激活码已存在' });
+    }
+    licenses.set(licenseKey, { used: false, machine: null });
+    return res.json({ success: true });
   }
 
+  // 用户激活时调用此接口
   if (action === 'verify') {
-    const licenseData = licenses.get(licenseKey);
-    if (!licenseData) return res.json({ valid: false, reason: '激活码不存在' });
-    if (licenseData.used) return res.json({ valid: false, reason: '激活码已使用' });
+    const data = licenses.get(licenseKey);
 
-    const payload = Buffer.from(licenseKey.split('|')[1], 'base64').toString('utf8');
-    const [machineCodeCheck, productIdCheck, expireDateCheck] = payload.split('|');
+    // 激活码不存在
+    if (!data) return res.json({ valid: false, reason: '激活码无效' });
 
-    if (machineCodeCheck !== machineCode) {
-      return res.json({ valid: false, reason: '机器不匹配' });
+    // 已绑定其他机器
+    if (data.used && data.machine !== machineCode) {
+      return res.json({ valid: false, reason: '激活码已被其他设备使用' });
     }
 
-    if (new Date() > new Date(expireDateCheck)) {
-      return res.json({ valid: false, reason: '已过期' });
+    // 第一次使用：绑定机器码
+    if (!data.used) {
+      data.used = true;
+      data.machine = machineCode;
     }
 
-    licenseData.used = true;
-    res.json({ valid: true });
+    return res.json({ valid: true });
   }
-}
+};
