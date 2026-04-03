@@ -1,42 +1,31 @@
+import { Redis } from '@upstash/redis';
 
-module.exports = async function handler(req, res) {
-  const { action, machineCode, licenseKey } = req.body;
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+});
 
-  const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
-  const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  async function redisGet(key) {
-    const r = await fetch(`${REDIS_URL}/get/${encodeURIComponent(key)}`, {
-      headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
-    });
-    const data = await r.json();
-    return data.result ? JSON.parse(data.result) : null;
-  }
-
-  async function redisSet(key, value) {
-    await fetch(`${REDIS_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(JSON.stringify(value))}`, {
-      headers: { Authorization: `Bearer ${REDIS_TOKEN}` }
-    });
-  }
+export default async function handler(req, res) {
+  const { action, licenseKey } = req.method === 'POST'
+    ? await req.json ? req.json() : new Promise(r => {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => r(JSON.parse(body)));
+      })
+    : req.query;
 
   if (action === 'create') {
-    const existing = await redisGet(`license:${licenseKey}`);
-    if (existing) return res.json({ success: false, reason: '激活码已存在' });
-    await redisSet(`license:${licenseKey}`, { used: false, machine: null });
-    return res.json({ success: true });
+    await redis.set(`license:${licenseKey}`, 'unused');
+    return res.status(200).json({ success: true, licenseKey });
   }
 
   if (action === 'verify') {
-    const data = await redisGet(`license:${licenseKey}`);
-    if (!data) return res.json({ valid: false, reason: '激活码无效' });
-    if (data.used && data.machine !== machineCode) {
-      return res.json({ valid: false, reason: '激活码已被其他设备使用' });
-    }
-    if (!data.used) {
-      await redisSet(`license:${licenseKey}`, { used: true, machine: machineCode });
-    }
-    return res.json({ valid: true });
+    const status = await redis.get(`license:${licenseKey}`);
+    if (!status) return res.status(200).json({ success: false, reason: '无效激活码' });
+    if (status === 'used') return res.status(200).json({ success: false, reason: '已被使用' });
+    await redis.set(`license:${licenseKey}`, 'used');
+    return res.status(200).json({ success: true });
   }
 
-  return res.json({ error: '未知操作' });
-};
+  res.status(200).json({ success: false, reason: '未知操作' });
+}
