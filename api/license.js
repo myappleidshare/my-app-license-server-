@@ -20,8 +20,8 @@ function parseRecord(raw) {
 module.exports = async function handler(req, res) {
   const body = req.method === 'POST' ? (req.body || {}) : (req.query || {});
   const action = body.action;
-  const licenseKey = body.licenseKey;
-  const machineCode = body.machineCode;
+  const licenseKey = String(body.licenseKey || '').trim();
+  const machineCode = String(body.machineCode || '').trim();
 
   if (action === 'create') {
     if (!licenseKey) {
@@ -91,10 +91,7 @@ module.exports = async function handler(req, res) {
       return res.status(200).json({ success: false, reason: '无效激活码' });
     }
 
-    return res.status(200).json({
-      success: true,
-      record
-    });
+    return res.status(200).json({ success: true, record });
   }
 
   return res.status(200).json({ success: false, reason: '未知操作' });
